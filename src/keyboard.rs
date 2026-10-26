@@ -30,6 +30,20 @@ pub fn find_keyboards() -> Vec<Device> {
         .collect()
 }
 
+// ── Output ───────────────────────────────────────────────────────────────────
+
+/// Where synthesised key events go. The real daemon uses the uinput
+/// passthrough device; tests record the events instead.
+pub trait KeyOut {
+    fn emit(&mut self, events: &[InputEvent]) -> std::io::Result<()>;
+}
+
+impl KeyOut for VirtualDevice {
+    fn emit(&mut self, events: &[InputEvent]) -> std::io::Result<()> {
+        VirtualDevice::emit(self, events)
+    }
+}
+
 // ── Virtual passthrough device ────────────────────────────────────────────────
 
 /// Build a uinput virtual keyboard whose key set is the union of all grabbed

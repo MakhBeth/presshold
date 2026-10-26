@@ -19,8 +19,11 @@ Hold any letter key that has accent variants (e.g. `e`) and a popup appears with
 | Same letter again | Cycle to next accent |
 | `←` / `→` | Move selection |
 | `1`–`9` | Pick by number |
-| `Enter` / `Space` | Confirm selection |
 | `Esc` | Cancel (type original character) |
+| Any other key (`Space`, `Enter`, `.`, another letter, …) | Confirm selection, then type that key as usual |
+
+So `e` held, `e` tapped, `Space` gives `è ` in one go. For the vowels the grave
+accent comes first (`è` before `é`), so Italian needs a single tap.
 
 ## 2. Requirements
 
@@ -151,9 +154,16 @@ journalctl --user -u presshold.service -f
 2. A uinput virtual keyboard re-emits all events that should pass through to applications.
 3. When a letter key is held long enough to trigger the kernel's autorepeat, presshold
    intercepts that event and shows a GTK4 popup.
-4. Navigation keys are handled internally; the selected accent is injected via
-   **`wtype`** (Wayland) or **`xdotool type`** (X11).
-   Synthetic injection events bypass our evdev grab and reach the focused application directly.
+4. Navigation keys are handled internally. The selected accent is typed on the
+   virtual keyboard as an **XKB Compose sequence** (for example Compose, `` ` ``, `e`
+   for `è`) when a Compose key is configured — presshold reads it from Hyprland's
+   `input:kb_options` (`compose:caps`, `compose:ralt`, …). To an application this
+   is indistinguishable from the physical keyboard, so it also works in Chromium
+   and Electron apps, which ignore the throw-away keymaps `wtype` uses.
+   Without a Compose key the accent is injected via **`wtype`** (Wayland),
+   the GTK Unicode input method (GNOME Wayland) or **`xdotool type`** (X11).
+5. Keys pressed while the accent is being typed are held back and replayed right
+   after it, so `è.` never comes out as `.è`.
 
 ## 7. Supported environments
 
