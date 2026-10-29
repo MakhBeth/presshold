@@ -551,7 +551,7 @@ fn main() -> Result<()> {
         );
     }
 
-    let vdev = keyboard::create_passthrough(&keyboards)
+    let vdev = keyboard::create_passthrough()
         .context("Failed to create uinput passthrough device")?;
 
     let compose_key = compose::detect_compose_key();
@@ -565,7 +565,10 @@ fn main() -> Result<()> {
     let (tx, rx) = std::sync::mpsc::sync_channel::<InputEvent>(4096);
     let rx = Arc::new(Mutex::new(rx));
 
-    keyboard::spawn_readers(keyboards, tx);
+    let grabbed = keyboard::Grabbed::default();
+    keyboard::spawn_readers(keyboards, &tx, &grabbed);
+    // Keyboards plugged in later are grabbed as they appear.
+    keyboard::spawn_hotplug_watcher(tx, grabbed);
 
     // ── GTK application ───────────────────────────────────────────────────────
     let app = Application::builder()
