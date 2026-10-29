@@ -1,38 +1,37 @@
 /// Returns the accented variants for a base character, or `None` if none exist.
-/// The variants follow macOS, except that the grave accent comes before the
-/// acute one so Italian vowels (à è ì ò ù) are one tap away.
+/// The variants are ordered the same way macOS presents them.
 pub fn variants(ch: char) -> Option<&'static [char]> {
     match ch {
         // — lowercase —
-        'a' => Some(&['à', 'á', 'ā', 'ă', 'â', 'å', 'ä', 'ã', 'æ']),
+        'a' => Some(&['á', 'à', 'ā', 'ă', 'â', 'å', 'ä', 'ã', 'æ']),
         'c' => Some(&['ç', 'ć', 'č']),
         'd' => Some(&['ð', 'ď']),
-        'e' => Some(&['è', 'é', 'ē', 'ĕ', 'ê', 'ě', 'ë', 'ę']),
+        'e' => Some(&['é', 'è', 'ē', 'ĕ', 'ê', 'ě', 'ë', 'ę']),
         'g' => Some(&['ğ']),
-        'i' => Some(&['ì', 'í', 'ī', 'ĭ', 'î', 'ï', 'ĩ']),
+        'i' => Some(&['í', 'ì', 'ī', 'ĭ', 'î', 'ï', 'ĩ']),
         'l' => Some(&['ł', 'ľ', 'ĺ']),
         'n' => Some(&['ñ', 'ń', 'ň']),
-        'o' => Some(&['ò', 'ó', 'ō', 'ŏ', 'ô', 'ö', 'õ', 'ø', 'œ']),
+        'o' => Some(&['ó', 'ò', 'ō', 'ŏ', 'ô', 'ö', 'õ', 'ø', 'œ']),
         'r' => Some(&['ř', 'ŕ']),
         's' => Some(&['ß', 'š', 'ś', 'ş']),
         't' => Some(&['þ', 'ť']),
-        'u' => Some(&['ù', 'ú', 'ū', 'ŭ', 'û', 'ü', 'ů']),
+        'u' => Some(&['ú', 'ù', 'ū', 'ŭ', 'û', 'ü', 'ů']),
         'y' => Some(&['ý', 'ÿ']),
         'z' => Some(&['ž', 'ź', 'ż']),
         // — uppercase —
-        'A' => Some(&['À', 'Á', 'Ā', 'Ă', 'Â', 'Å', 'Ä', 'Ã', 'Æ']),
+        'A' => Some(&['Á', 'À', 'Ā', 'Ă', 'Â', 'Å', 'Ä', 'Ã', 'Æ']),
         'C' => Some(&['Ç', 'Ć', 'Č']),
         'D' => Some(&['Ð', 'Ď']),
-        'E' => Some(&['È', 'É', 'Ē', 'Ĕ', 'Ê', 'Ě', 'Ë', 'Ę']),
+        'E' => Some(&['É', 'È', 'Ē', 'Ĕ', 'Ê', 'Ě', 'Ë', 'Ę']),
         'G' => Some(&['Ğ']),
-        'I' => Some(&['Ì', 'Í', 'Ī', 'Ĭ', 'Î', 'Ï', 'Ĩ']),
+        'I' => Some(&['Í', 'Ì', 'Ī', 'Ĭ', 'Î', 'Ï', 'Ĩ']),
         'L' => Some(&['Ł', 'Ľ', 'Ĺ']),
         'N' => Some(&['Ñ', 'Ń', 'Ň']),
-        'O' => Some(&['Ò', 'Ó', 'Ō', 'Ŏ', 'Ô', 'Ö', 'Õ', 'Ø', 'Œ']),
+        'O' => Some(&['Ó', 'Ò', 'Ō', 'Ŏ', 'Ô', 'Ö', 'Õ', 'Ø', 'Œ']),
         'R' => Some(&['Ř', 'Ŕ']),
         'S' => Some(&['Š', 'Ś', 'Ş']),
         'T' => Some(&['Þ', 'Ť']),
-        'U' => Some(&['Ù', 'Ú', 'Ū', 'Ŭ', 'Û', 'Ü', 'Ů']),
+        'U' => Some(&['Ú', 'Ù', 'Ū', 'Ŭ', 'Û', 'Ü', 'Ů']),
         'Y' => Some(&['Ý', 'Ÿ']),
         'Z' => Some(&['Ž', 'Ź', 'Ż']),
         // - punctuation -
@@ -45,23 +44,89 @@ pub fn has_variants(ch: char) -> bool {
     variants(ch).is_some()
 }
 
+/// In which order the variants of a vowel are offered.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum AccentOrder {
+    /// As macOS: acute first (`é` before `è`).
+    MacOs,
+    /// Grave first (`è` before `é`), so languages that mostly use the grave
+    /// accent, such as Italian, get it with a single tap.
+    GraveFirst,
+}
+
+impl AccentOrder {
+    /// `--grave-first` on the command line, or `PRESSHOLD_GRAVE_FIRST` set to
+    /// anything but `0`, `false` or empty in the environment.
+    pub fn from(args: &[String], env: Option<&str>) -> Self {
+        let flag = args.iter().skip(1).any(|a| a == "--grave-first");
+        let env = env.map_or(false, |v| !matches!(v.trim(), "" | "0" | "false" | "no"));
+        if flag || env { AccentOrder::GraveFirst } else { AccentOrder::MacOs }
+    }
+}
+
+/// Like [`variants`], but in the requested order.  The macOS table lists the
+/// acute accent first and the grave one second for every vowel, so the
+/// grave-first order is that table with the first two entries swapped.
+pub fn variants_in(ch: char, order: AccentOrder) -> Option<&'static [char]> {
+    if order == AccentOrder::MacOs {
+        return variants(ch);
+    }
+    let swapped: &'static [char] = match ch {
+        'a' => &['à', 'á', 'ā', 'ă', 'â', 'å', 'ä', 'ã', 'æ'],
+        'e' => &['è', 'é', 'ē', 'ĕ', 'ê', 'ě', 'ë', 'ę'],
+        'i' => &['ì', 'í', 'ī', 'ĭ', 'î', 'ï', 'ĩ'],
+        'o' => &['ò', 'ó', 'ō', 'ŏ', 'ô', 'ö', 'õ', 'ø', 'œ'],
+        'u' => &['ù', 'ú', 'ū', 'ŭ', 'û', 'ü', 'ů'],
+        'A' => &['À', 'Á', 'Ā', 'Ă', 'Â', 'Å', 'Ä', 'Ã', 'Æ'],
+        'E' => &['È', 'É', 'Ē', 'Ĕ', 'Ê', 'Ě', 'Ë', 'Ę'],
+        'I' => &['Ì', 'Í', 'Ī', 'Ĭ', 'Î', 'Ï', 'Ĩ'],
+        'O' => &['Ò', 'Ó', 'Ō', 'Ŏ', 'Ô', 'Ö', 'Õ', 'Ø', 'Œ'],
+        'U' => &['Ù', 'Ú', 'Ū', 'Ŭ', 'Û', 'Ü', 'Ů'],
+        _ => return variants(ch),
+    };
+    debug_assert_eq!(swapped[2..], variants(ch).unwrap()[2..], "grave-first table drifted from the macOS one");
+    Some(swapped)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::variants;
+    use super::{variants, variants_in, AccentOrder};
 
     #[test]
-    fn vowels_list_grave_accent_before_acute() {
-        // Italian-first ordering: one tap of the same letter lands on the grave accent.
-        assert_eq!(variants('a').unwrap()[..2], ['à', 'á']);
-        assert_eq!(variants('e').unwrap()[..2], ['è', 'é']);
-        assert_eq!(variants('i').unwrap()[..2], ['ì', 'í']);
-        assert_eq!(variants('o').unwrap()[..2], ['ò', 'ó']);
-        assert_eq!(variants('u').unwrap()[..2], ['ù', 'ú']);
+    fn default_order_follows_macos_with_acute_first() {
+        assert_eq!(variants('a').unwrap()[..2], ['á', 'à']);
+        assert_eq!(variants('e').unwrap()[..2], ['é', 'è']);
+        assert_eq!(variants_in('e', AccentOrder::MacOs).unwrap()[..2], ['é', 'è']);
+        assert_eq!(variants_in('E', AccentOrder::MacOs).unwrap()[..2], ['É', 'È']);
     }
 
     #[test]
-    fn uppercase_vowels_list_grave_accent_before_acute() {
-        assert_eq!(variants('E').unwrap()[..2], ['È', 'É']);
-        assert_eq!(variants('O').unwrap()[..2], ['Ò', 'Ó']);
+    fn grave_first_puts_the_grave_accent_first_on_vowels() {
+        // One tap of the same letter lands on the grave accent (Italian: à è ì ò ù).
+        for (ch, expect) in [('a', ['à', 'á']), ('e', ['è', 'é']), ('i', ['ì', 'í']), ('o', ['ò', 'ó']), ('u', ['ù', 'ú'])] {
+            assert_eq!(variants_in(ch, AccentOrder::GraveFirst).unwrap()[..2], expect, "{ch}");
+        }
+        assert_eq!(variants_in('E', AccentOrder::GraveFirst).unwrap()[..2], ['È', 'É']);
+        assert_eq!(variants_in('O', AccentOrder::GraveFirst).unwrap()[..2], ['Ò', 'Ó']);
+    }
+
+    #[test]
+    fn grave_first_only_swaps_the_first_two_and_leaves_other_letters_alone() {
+        assert_eq!(variants_in('e', AccentOrder::GraveFirst).unwrap()[2..], variants('e').unwrap()[2..]);
+        assert_eq!(variants_in('n', AccentOrder::GraveFirst), variants('n'));
+        assert_eq!(variants_in('y', AccentOrder::GraveFirst), variants('y'));
+        assert_eq!(variants_in('-', AccentOrder::GraveFirst), variants('-'));
+        assert_eq!(variants_in('x', AccentOrder::GraveFirst), None);
+    }
+
+    #[test]
+    fn order_is_read_from_flag_or_environment() {
+        let args = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(AccentOrder::from(&args(&["presshold"]), None), AccentOrder::MacOs);
+        assert_eq!(AccentOrder::from(&args(&["presshold", "--grave-first"]), None), AccentOrder::GraveFirst);
+        assert_eq!(AccentOrder::from(&args(&["presshold"]), Some("1")), AccentOrder::GraveFirst);
+        assert_eq!(AccentOrder::from(&args(&["presshold"]), Some("true")), AccentOrder::GraveFirst);
+        assert_eq!(AccentOrder::from(&args(&["presshold"]), Some("0")), AccentOrder::MacOs);
+        assert_eq!(AccentOrder::from(&args(&["presshold"]), Some("")), AccentOrder::MacOs);
     }
 }
