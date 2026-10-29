@@ -66,6 +66,8 @@ struct Daemon {
     /// Key configured as XKB Compose, if any. With it, accents are typed as
     /// Compose sequences on the passthrough device instead of via wtype.
     compose_key: Option<Key>,
+    /// Order in which a vowel's accents are offered.
+    order:       accents::AccentOrder,
     shift:       bool,
     /// Which Shift key the user is holding, so it can be lifted and restored.
     shift_key:   Key,
@@ -77,13 +79,14 @@ struct Daemon {
 }
 
 impl Daemon {
-    fn new(out: Box<dyn keyboard::KeyOut>, session: Session, compose_key: Option<Key>) -> Self {
+    fn new(out: Box<dyn keyboard::KeyOut>, session: Session, compose_key: Option<Key>, order: accents::AccentOrder) -> Self {
         Self {
             state: State::Idle,
             out,
             popup: None,
             session,
             compose_key,
+            order,
             shift: false,
             shift_key: Key::KEY_LEFTSHIFT,
             caps: false,
@@ -183,7 +186,7 @@ impl Daemon {
                 }
                 2 => {
                     // First autorepeat = held long enough → show popup
-                    let variants = accents::variants(base_char).unwrap();
+                    let variants = accents::variants_in(base_char, self.order).unwrap();
                     let (cx, cy) = cursor_pos();
                     info!("Showing popup for {base_char:?} at ({cx},{cy})");
                     self.popup = Some(Popup::new(base_char, variants, cx, cy));
@@ -507,9 +510,28 @@ fn cursor_pos() -> (i32, i32) {
 // Entry point
 // ─────────────────────────────────────────────────────────────────────────────
 
+const USAGE: &str = "\
+Usage: presshold [--grave-first]
+
+  --grave-first   offer the grave accent before the acute one on vowels
+                  (è before é), so Italian-style accents are one tap away.
+                  Also enabled by PRESSHOLD_GRAVE_FIRST=1 in the environment.
+  -h, --help      show this help";
+
 fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .init();
+
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().skip(1).any(|a| a == "-h" || a == "--help") {
+        println!("{USAGE}");
+        return Ok(());
+    }
+    if let Some(bad) = args.iter().skip(1).find(|a| *a != "--grave-first") {
+        anyhow::bail!("unknown argument {bad:?}\n{USAGE}");
+    }
+    let order = accents::AccentOrder::from(&args, std::env::var("PRESSHOLD_GRAVE_FIRST").ok().as_deref());
+    info!("Accent order: {order:?}");
 
     let session = detector::session();
     let desktop = detector::desktop();
@@ -584,7 +606,7 @@ fn main() -> Result<()> {
         // Take ownership; ignore subsequent activations.
         let Some(vdev) = vdev_cell.borrow_mut().take() else { return };
 
-        let daemon = Rc::new(RefCell::new(Daemon::new(Box::new(vdev), session_clone.clone(), compose_key)));
+        let daemon = Rc::new(RefCell::new(Daemon::new(Box::new(vdev), session_clone.clone(), compose_key, order)));
 
         // Poll the mpsc receiver every 1 ms from the GTK main loop.
         // 1 ms adds imperceptible latency while keeping CPU usage negligible.
@@ -625,8 +647,13 @@ mod tests {
     }
 
     fn daemon() -> (Daemon, Rc<RefCell<Vec<InputEvent>>>) {
+        daemon_with(accents::AccentOrder::GraveFirst)
+    }
+
+    /// Most tests use the grave-first order so that index 1 is `è`.
+    fn daemon_with(order: accents::AccentOrder) -> (Daemon, Rc<RefCell<Vec<InputEvent>>>) {
         let out = Rc::new(RefCell::new(Vec::new()));
-        let d = Daemon::new(Box::new(Recorder(out.clone())), Session::Wayland, Some(Key::KEY_CAPSLOCK));
+        let d = Daemon::new(Box::new(Recorder(out.clone())), Session::Wayland, Some(Key::KEY_CAPSLOCK), order);
         (d, out)
     }
 
@@ -646,7 +673,7 @@ mod tests {
         d.state = State::PopupActive {
             trigger_key: trigger,
             base_char: base,
-            accents: accents::variants(base).unwrap(),
+            accents: accents::variants_in(base, d.order).unwrap(),
             selected,
         };
     }
@@ -671,6 +698,21 @@ mod tests {
             (Key::KEY_SPACE, 1), (Key::KEY_SPACE, 0),
         ]);
         assert!(matches!(d.state, State::Idle));
+    }
+
+    #[test]
+    fn default_macos_order_puts_the_acute_accent_first() {
+        let (mut d, out) = daemon_with(accents::AccentOrder::MacOs);
+        popup_open(&mut d, 'e', Key::KEY_E, 1); // é
+        d.handle_event(key(Key::KEY_SPACE, 1));
+        d.handle_event(key(Key::KEY_SPACE, 0));
+        settle(&mut d);
+        assert_eq!(typed(&out), vec![
+            (Key::KEY_CAPSLOCK, 1), (Key::KEY_CAPSLOCK, 0),
+            (Key::KEY_APOSTROPHE, 1), (Key::KEY_APOSTROPHE, 0),
+            (Key::KEY_E, 1), (Key::KEY_E, 0),
+            (Key::KEY_SPACE, 1), (Key::KEY_SPACE, 0),
+        ]);
     }
 
     #[test]

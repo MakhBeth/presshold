@@ -22,8 +22,18 @@ Hold any letter key that has accent variants (e.g. `e`) and a popup appears with
 | `Esc` | Cancel (type original character) |
 | Any other key (`Space`, `Enter`, `.`, another letter, …) | Confirm selection, then type that key as usual |
 
-So `e` held, `e` tapped, `Space` gives `è ` in one go. For the vowels the grave
-accent comes first (`è` before `é`), so Italian needs a single tap.
+So `e` held, `e` tapped, `Space` gives `é ` in one go.
+
+### 1.1. Options
+
+| Option | Effect |
+|--------|--------|
+| `--grave-first` | List the grave accent before the acute one on vowels (`è` before `é`), so languages that mostly use the grave accent, such as Italian, get it with a single tap. |
+| `-h`, `--help` | Show usage. |
+
+The same switch can be set from the environment with `PRESSHOLD_GRAVE_FIRST=1`.
+The systemd service reads `~/.config/presshold/env`, so putting that line there
+enables it without editing the unit.
 
 ## 2. Requirements
 
